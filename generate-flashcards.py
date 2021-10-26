@@ -1,81 +1,82 @@
-import pandas
-import copy
-import os.path
+import pandas as pd
+import glob
+import re
 
-# Make directory for stories files:
-if os.path.isdir("kodansha_vocab_stories"):
-    print("Stories directory exists. Do not make.")
-else:
-    os.mkdir("kodansha_vocab_stories")
-    print("Making stories directory.")
 
-# Step 1: Import Excel file of flashcards as pandas table.
-n = 1
-max_deck_no = 18 # Maximum number of decks to make.
-while n <= max_deck_no:
-    # Step 1: Read the vocabulary files:
-    n_str = str(n).zfill(2)
-    flashcards_file = "kodansha_vocab/kodansha_kanji_course_vocab_" + n_str + "_of_18.xlsx"
-    new_flashcards_file = "kodansha_vocab_stories/kodansha_kanji_course_vocab_stories_" + n_str + "_of_18.xlsx"
-    flashcards_file_df = pandas.read_excel(flashcards_file)
-    flashcards_file_df_colnames = ['Text 1', 'Text 2', 'Text 3']
-    flashcards_file_df.columns = flashcards_file_df_colnames
-    flashcards_kanji_list = flashcards_file_df['Text 1'].tolist()
-    # Step 2: Import Excel file of my Kodansha stories:
-    stories_filename = "2021.02.18_all_kodansha_kanji_course.xlsx"
-    stories_df = pandas.read_excel(stories_filename, header=None)
-    stories_df.columns = ["kanji", "meaning", "story"]
-    stories_kanji_list = stories_df.kanji.tolist()
-    stories_meaning_list = stories_df.meaning.tolist()
-    stories_story_list = stories_df.story.tolist()
-    filt_stories_story_list = []
-    for i_0 in stories_story_list:
-        story_var = copy.deepcopy(i_0)
-        if isinstance(story_var, float):
-            story_var = ""
-        filt_stories_story_list.append(story_var)
-    stories_story_list = filt_stories_story_list
-    # Step 3: Scan each Japanese word in flashcards table, extract a list of kanji for each word:
-    parent_vocab_scan_kanji_list = []
-    for i_0 in flashcards_kanji_list:
-        vocab_scan = copy.deepcopy(i_0)
-        child_vocab_scan_kanji_list = []
-        for i_1 in vocab_scan:
-            for i_2 in stories_kanji_list:
-                if i_1 == i_2:
-                    if i_2 not in child_vocab_scan_kanji_list:
-                        child_vocab_scan_kanji_list.append(i_2)
-        parent_vocab_scan_kanji_list.append(child_vocab_scan_kanji_list)
-    parent_story_list = []
-    for i_0 in parent_vocab_scan_kanji_list:
-        vocab_scan = copy.deepcopy(i_0)
-        child_vocab_scan_kanji_list = []
-        for i_1 in vocab_scan:
-            for i_2 in range(len(stories_kanji_list)):
-                story_kanji = copy.deepcopy(stories_kanji_list[i_2])
-                gc_list = []
-                if i_1 == story_kanji:
-                    # Add a yellow colour tag to make the kanji more readable:
-                    gc_list.append("<color yellow>" + story_kanji + "</color>")
-                    gc_list.append("<color yellow>" + stories_meaning_list[i_2] + "</color>")
-                    gc_list.append(stories_story_list[i_2])
-                    child_vocab_scan_kanji_list.append(gc_list)
-        parent_story_list.append(child_vocab_scan_kanji_list)
-    story_string_list = []
-    for i_0 in parent_story_list:
-        story_scan = copy.deepcopy(i_0)
-        if story_scan == []:
-            story_string = ""
-        else:
-            child_story_list = []
-            for i_1 in story_scan:
-                joined = ("|").join(i_1)
-                child_story_list.append(joined)
-            story_string = ("||").join(child_story_list)
-        story_string_list.append(story_string)
-    # Create the final Excel file:
-    flashcards_file_df["Text 4"] = story_string_list
-    flashcards_file_df_colnames = ['Text 1', 'Text 2', 'Text 3', 'Text 4']
-    flashcards_file_df.columns = flashcards_file_df_colnames
-    flashcards_file_df.to_excel(new_flashcards_file, sheet_name='Sheet1', index=False)
-    n += 1
+
+def vocab_files_dir(input_dir, stories_filename, stories_colname):
+    '''
+    input_dir = vocab file where the first column must contain the kanji-containing Japanese vocab.
+    stories_filename = filename of our 3-column kanji stories file.
+    stories_colname = column name for the additional column in which stories will be aded.
+    '''
+    input_files = sorted(glob.glob(input_dir + '/*.xlsx'))
+    main_vocab_story_dict = {}
+    for i_0 in input_files:
+        print("Processing " + i_0)
+        # Read the vocabulary files and define columns:
+        flashcards_file_df = pd.read_excel(i_0)
+        flashcards_file_dict = pd.DataFrame.to_dict(flashcards_file_df, orient='list')
+        vocab_kanji_key = list(flashcards_file_dict.keys())[0]
+        # Import Excel file of Kodansha stories:
+        stories_df = pd.read_excel(stories_filename, header=None)
+        stories_df.columns = ["kanji", "meaning", "story"]
+        stories_file_dict = pd.DataFrame.to_dict(stories_df, orient='list')
+        # Scan each word in the vocab dataframe 'kanji' column for kanji that appear in the stories file:
+        parent_vocab_scan_kanji_list = []
+        for i_1 in flashcards_file_dict[vocab_kanji_key]:
+            child_vocab_scan_kanji_list = []
+            for i_2 in i_1:
+                for i_3 in stories_file_dict["kanji"]:
+                    if i_2 == i_3:
+                        if i_3 not in child_vocab_scan_kanji_list:
+                            child_vocab_scan_kanji_list.append(i_3)
+            parent_vocab_scan_kanji_list.append(child_vocab_scan_kanji_list)
+        # Create structured nested lists containing relevant kanji information and colour formatting:
+        parent_story_list = []
+        for i_1 in parent_vocab_scan_kanji_list:
+            child_vocab_scan_kanji_list = []
+            for i_2 in i_1:
+                for num, i_3 in enumerate(stories_file_dict["kanji"]):
+                    gc_list = []
+                    if i_2 == i_3:
+                        # Add a yellow colour tag to make the kanji more readable:
+                        gc_list.append("<color yellow>" + stories_file_dict["kanji"][num] + "</color>")
+                        gc_list.append("<color yellow>" + stories_file_dict["meaning"][num] + "</color>")
+                        gc_list.append(stories_file_dict["story"][num])
+                        child_vocab_scan_kanji_list.append(gc_list)
+            parent_story_list.append(child_vocab_scan_kanji_list)
+        # Create a single list of strings with Flashcards Deluxe formatting for each vocab:
+        story_string_list = []
+        for i_1 in parent_story_list:
+            if i_1 == []:
+                story_string = ""
+            else:
+                child_story_list = []
+                for i_2 in i_1:
+                    joined = ("|").join(i_2)
+                    child_story_list.append(joined)
+                story_string = ("||").join(child_story_list)
+            story_string_list.append(story_string)
+        # Add our story string list as another value:
+        flashcards_file_dict[stories_colname] = story_string_list
+        main_vocab_story_dict[i_0] = flashcards_file_dict
+    # Return the main dictionary:
+    return main_vocab_story_dict
+
+
+## ---- RUN SCRIPT FROM HERE ---- ##
+
+# Create the dictionary containing vocab data and kanji stories for all vocab files in the input directory:
+input_dir = "input_dir"
+output_dir = "output_dir"
+vocab_story_dict = vocab_files_dir(input_dir = input_dir,
+                                   stories_filename = "2021.02.18_all_kodansha_kanji_course.xlsx",
+                                   stories_colname = "Text 4")
+
+# Export the Excel files from the dictionary we created into the output directory:
+for i_0 in vocab_story_dict.keys():
+    output_filename = re.sub(input_dir, output_dir, i_0)
+    single_df = pd.DataFrame(vocab_story_dict[i_0])
+    print("Exporting " + output_filename)
+    single_df.to_excel(output_filename, sheet_name='Sheet1', index=False)
